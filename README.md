@@ -326,6 +326,7 @@ invalid, so the answer tells you little. Check these instead:
 - [Yealink desk phone call log](https://github.com/SudoManaged/ha-yealink-call-log)
 - [Dehumidifier kit](https://github.com/SudoManaged/ha-dehumidifier-kit)
 - [Internet failover alerts](https://github.com/SudoManaged/ha-internet-failover)
+- [Daily schedule from several calendars](https://github.com/SudoManaged/ha-daily-schedule)
 
 ## Changelog and license
 
