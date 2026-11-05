@@ -1,0 +1,7 @@
+- id: test_webhook_alerts
+  alias: Test webhook alerts
+  use_blueprint:
+    path: sudomanaged/webhook_alerts.yaml
+    input:
+      webhook_id: test-alerts-0123456789abcdef
+      notify_action: notify.persistent_notification

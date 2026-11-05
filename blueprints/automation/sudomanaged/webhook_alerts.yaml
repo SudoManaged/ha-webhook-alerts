@@ -1,0 +1,147 @@
+blueprint:
+  name: Webhook alerts
+  description: >-
+    Lets any script, cron job or device send an alert to Home Assistant with one HTTP POST.
+
+    Send JSON: `{"source": "Nightly backup", "level": "alert", "message": "Backup failed: disk full"}`
+
+    - `level: info` is written to the logbook only (good for "all is well" heartbeats).
+
+    - Any other level is written to the logbook **and** sent to your notify action, and can also appear as a
+    notification inside Home Assistant. A message without a level gets the level you choose below.
+
+    - With "Home Assistant app options" on, each source gets its own notification tag, so on the Home Assistant
+    phone app a new alert from the same source replaces the previous one instead of piling up.
+
+
+    Example:
+    `curl -X POST -H "Content-Type: application/json"
+    -d '{"source":"Backup","level":"alert","message":"Backup failed"}'
+    http://homeassistant.local:8123/api/webhook/YOUR_WEBHOOK_ID`
+
+
+    Home Assistant answers 200 to a POST even when the ID is unknown, the sender is blocked or the body is not
+    valid JSON, so a 200 does not prove the alert arrived. See the README for testing.
+  domain: automation
+  source_url: https://github.com/SudoManaged/ha-webhook-alerts/blob/main/blueprints/automation/sudomanaged/webhook_alerts.yaml
+  author: SudoManaged
+  homeassistant:
+    min_version: 2024.11.0
+  input:
+    webhook_id:
+      name: Webhook ID
+      description: >-
+        A long, random ID (for example from a password generator). It works like a password: anyone who
+        can reach your Home Assistant and knows it can send you alerts, so keep it private.
+      selector:
+        text:
+    local_only:
+      name: Local network only
+      description: >-
+        Only accept alerts from private network addresses (see the README for which ones count). Recommended
+        unless your senders reach Home Assistant from outside your network.
+      default: true
+      selector:
+        boolean:
+    notify_action:
+      name: Notify action
+      description: >-
+        Where alerts go: a notify action such as `notify.mobile_app_my_phone` (one phone with the Home Assistant
+        app), `notify.notify` (with the app installed: every phone with the app) or a notify group defined in
+        YAML. Notify entities (`notify.send_message`) are not supported.
+      default: notify.notify
+      selector:
+        text:
+    phone_app:
+      name: Home Assistant app options
+      description: >-
+        Send the phone app's options with each alert: a tag per source (a new alert replaces the previous one),
+        and high priority so Android delivers it at once. Turn this off if your notify action is not the
+        Home Assistant app and rejects them.
+      default: true
+      selector:
+        boolean:
+    persistent:
+      name: Also show alerts inside Home Assistant
+      description: Create a Home Assistant notification (the bell) for each alert, one per source.
+      default: true
+      selector:
+        boolean:
+    default_level:
+      name: Level when a message has none
+      description: >-
+        `alert` notifies for messages without a level; `info` only writes them to the logbook. Use `info` if your
+        senders mostly send routine messages and mark problems explicitly.
+      default: alert
+      selector:
+        select:
+          options:
+            - alert
+            - info
+mode: queued
+max: 20
+triggers:
+  - trigger: webhook
+    webhook_id: !input webhook_id
+    allowed_methods:
+      - POST
+    local_only: !input local_only
+variables:
+  notify_action: !input notify_action
+  phone_app: !input phone_app
+  persistent: !input persistent
+  default_level: !input default_level
+actions:
+  # Each field is read straight from the request, so a huge body is never rendered as a whole (Home Assistant
+  # refuses template results over 256 KiB). Home Assistant also turns a template result that reads as a Python
+  # value back into that value, so a text that is exactly "None" or "..." is shown as "(none)" or ". . .".
+  - variables:
+      src: >-
+        {%- set j = trigger.json if trigger.json is defined and trigger.json is mapping else {} %}
+        {%- set v = j.get('source') %}
+        {%- set v = 'Webhook alert' if v is none or v | string == '' else v | string | truncate(60, true, '', 0) %}
+        {{- {'None': '(none)', '...': '. . .'}.get(v, v) }}
+      lvl: >-
+        {%- set j = trigger.json if trigger.json is defined and trigger.json is mapping else {} %}
+        {%- set v = j.get('level') %}
+        {{- (default_level if v is none or v | string == '' else v | string | truncate(30, true, '', 0)) | lower }}
+      msg: >-
+        {%- set j = trigger.json if trigger.json is defined and trigger.json is mapping else {} %}
+        {%- set v = j.get('message') %}
+        {%- set v = '(no message)' if v is none or v | string == '' else v | string | truncate(900, true, '...', 0) %}
+        {{- {'None': '(none)', '...': '. . .'}.get(v, v) }}
+      tag: "webhook-alert-{{ src | string | slugify }}"
+  - action: logbook.log
+    data:
+      name: "{{ src }}"
+      message: "{{ lvl }}: {{ msg }}"
+  - if:
+      - condition: template
+        value_template: "{{ lvl != 'info' }}"
+    then:
+      - if:
+          - condition: template
+            value_template: "{{ persistent }}"
+        then:
+          - action: persistent_notification.create
+            data:
+              title: "{{ src }}"
+              message: "{{ msg }}"
+              notification_id: "{{ tag }}"
+      - if:
+          - condition: template
+            value_template: "{{ phone_app }}"
+        then:
+          - action: "{{ notify_action }}"
+            data:
+              title: "{{ src }}"
+              message: "{{ msg }}"
+              data:
+                tag: "{{ tag }}"
+                ttl: 0
+                priority: high
+        else:
+          - action: "{{ notify_action }}"
+            data:
+              title: "{{ src }}"
+              message: "{{ msg }}"

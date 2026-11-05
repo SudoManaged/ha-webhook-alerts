@@ -1,0 +1,38 @@
+name: Validate blueprints
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check-config:
+    name: Home Assistant ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest supported release and the current one.
+        version: ["2024.11.0", "stable"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble a test configuration
+        run: |
+          mkdir -p /tmp/ha
+          cp -r tests/config/. /tmp/ha/
+          cp -r blueprints /tmp/ha/blueprints
+      - name: Pull Home Assistant ${{ matrix.version }}
+        run: docker pull ghcr.io/home-assistant/home-assistant:${{ matrix.version }}
+      # "shell: bash" turns on pipefail, so a failing check fails the step even through tee. The entrypoint runs
+      # only the check, not the image's own Home Assistant service.
+      - name: Run Home Assistant's configuration check
+        shell: bash
+        run: |
+          docker run --rm --network none --entrypoint python -v /tmp/ha:/config \
+            ghcr.io/home-assistant/home-assistant:${{ matrix.version }} \
+            -m homeassistant --script check_config --config /config 2>&1 | tee /tmp/check.txt
+          if grep -q -i -E "invalid config|failed config|error" /tmp/check.txt; then
+            echo "Home Assistant rejected the configuration"; exit 1
+          fi

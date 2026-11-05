@@ -1,0 +1,15 @@
+# Test configuration used by .github/workflows/validate.yml: Home Assistant's configuration check must accept
+# every blueprint in this repository. Placeholder IDs only; no real devices.
+homeassistant:
+  name: Blueprint test
+  time_zone: UTC
+  latitude: 0
+  longitude: 0
+  elevation: 0
+  unit_system: metric
+http:
+logbook:
+webhook:
+persistent_notification:
+notify:
+automation: !include automations.yaml
